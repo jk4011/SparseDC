@@ -16,7 +16,7 @@ model:
     backbone_g:
       _target_: src.models.backbones.PVTV2
       model_name: 'pvt_v2_b1'
-      pretrained: pretrain/pvt_v2_b1.pth
+      pretrained: pretrain/nyu.ckpt
       is_fill: true
     backbone_l:
       _target_: src.models.backbones.ResNetU_
