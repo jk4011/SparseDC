@@ -20,7 +20,6 @@ from src.utils.vis_utils import (
     padding_kitti,
 )
 
-
 class DepthLitModule(LightningModule):
     """Example of LightningModule for MNIST classification.
 

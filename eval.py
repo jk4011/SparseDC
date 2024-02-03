@@ -76,7 +76,8 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
     if datamodule.hparams.dataset in ["nyu", "sunrgbd"]:
         results = {}
         if datamodule.hparams.dataset == "nyu":
-            iter = 10
+            # iter = 10
+            iter = 1
         else:
             iter = 1
         for i in range(iter):
@@ -101,7 +102,7 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
             writer.writerow(output)
     else:
         # trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
-        trainer.validate(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path) # for kitti test
+        trainer.validate(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)  # for kitti test
         metric_dict = trainer.callback_metrics
 
     return metric_dict, object_dict

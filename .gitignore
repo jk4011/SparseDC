@@ -155,4 +155,4 @@ configs/local/default.yaml
 
 tmp*
 datas
-notebooks
+wandb

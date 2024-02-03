@@ -46,6 +46,7 @@ class NYUDataset(BaseDataset):
         self.mode = mode
         self.augment = args.augment
         self.is_sparse = args.is_sparse
+        self.marigold = args.marigold
 
         self.K = torch.Tensor(
             [
@@ -111,6 +112,28 @@ class NYUDataset(BaseDataset):
 
             dep = dep / _scale
 
+        elif self.marigold:
+            t_rgb = T.Compose(
+                [
+                    T.Resize(self.height),
+                    T.CenterCrop(self.crop_size),
+                    T.ToTensor(),
+                    # T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+                ]
+            )
+
+            t_dep = T.Compose(
+                [
+                    T.Resize(self.height),
+                    T.CenterCrop(self.crop_size),
+                    self.ToNumpy(),
+                    T.ToTensor(),
+                ]
+            )
+
+            rgb = t_rgb(rgb)
+            dep = t_dep(dep)
+        
         else:
             t_rgb = T.Compose(
                 [

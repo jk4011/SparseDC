@@ -9,3 +9,4 @@ args:
   split_json: nyu.json
   num_sample: ${num_sample}
   is_sparse: ${is_sparse}
+  marigold: false
