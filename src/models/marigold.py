@@ -1,3 +1,4 @@
+import csv
 import os
 from typing import Any, Dict, List
 
@@ -73,9 +74,10 @@ class MarigoldModule(LightningModule):
         base_lr,
         dataset,
         is_warmup=False,
-        
+
     ):
         super().__init__()
+        self.save_hyperparameters(logger=False)
         self.model = init_marigold()
 
         self.is_warmup = is_warmup
@@ -95,22 +97,21 @@ class MarigoldModule(LightningModule):
         pass
 
     def forward(self, batch):
-        # TODO: loop 
+        # TODO: loop
         assert len(batch['rgb']) == 1
-        
+
         image = batch['rgb'][0].cpu()
         gt_depth = batch['gt'][0]
         mask = batch['dep'][0] != 0
-        
-        depth = run_marigold(self.model, image)
+
+        depth = run_marigold(self.model, image)[None, :]  # [1, H, W]
         scale, shift = compute_scale_and_shift(depth, gt_depth, mask)
         depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
 
-        return depth
+        return depth[None, :]  # [1, 1, H, W]
 
     # def training_step(self, batch: Any, batch_idx: int):
     #     return 0
-
 
     def validation_step(self, batch: Any, batch_idx: int):
         gt = batch["gt"]
@@ -121,7 +122,6 @@ class MarigoldModule(LightningModule):
         result["epoch"] = batch_idx * word_size + rank
         for k in self.metric.metrics.keys():
             result[k] = f"{self.metric.metrics[k].item():.5f}"
-        
 
     def validation_epoch_end(self, outputs: List[Any]):
         avg_metric = self.metric.average()
@@ -140,32 +140,11 @@ class MarigoldModule(LightningModule):
             pass
 
     def test_step(self, batch: Any, batch_idx: int):
-        rank, word_size = get_dist_info()
         pred = self.forward(batch)
-        import jhutil; jhutil.jhprint(1111, self.hparams)
 
         if self.hparams.dataset in ["nyu", "sunrgbd"]:
             gt = batch["gt"]
             self.metric.evaluate(pred, gt)
-            result = {}
-            result["filename"] = batch_idx * word_size + rank
-            for k in self.metric.metrics.keys():
-                result[k] = f"{self.metric.metrics[k].item():.5f}"
-        str_i = str(batch_idx * word_size + rank)
-        path_i = str_i.zfill(10) + ".png"
-        path = os.path.join(self.test_out_dir, path_i)
-        if self.hparams.dataset == "kitti":
-            save_depth_as_uint16png_upload(pred, path)
-        else:
-            image = merge_into_row(
-                batch["rgb"],
-                batch["dep"],
-                pred,
-                gt,
-                (pred - gt).abs(),
-                self.hparams.dataset,
-            )
-            save_image(image, path)
 
     def test_epoch_end(self, outputs: List[Any]):
         if self.hparams.dataset in ["nyu", "sunrgbd"]:
@@ -227,4 +206,3 @@ class MarigoldModule(LightningModule):
                 )
                 for pg in optimizer.param_groups:
                     pg["lr"] = lr_warm_up
-
