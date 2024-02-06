@@ -1,0 +1,11 @@
+_target_: src.models.marigold.MarigoldModule
+
+is_warmup: false
+monitor: ${monitor}
+base_lr: ${base_lr}
+save_dir: ${paths.output_dir}
+dataset: ${data.dataset}
+
+metric:
+  _target_: src.criterion.metric.DepthCompletionMetric
+  max_depth: ${max_depth}
