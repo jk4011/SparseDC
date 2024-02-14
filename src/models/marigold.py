@@ -26,29 +26,7 @@ import numpy as np
 from PIL import Image
 from torchvision import transforms
 from model import init_marigold, run_marigold
-
-
-def compute_scale_and_shift(prediction, target, mask):
-    # system matrix: A = [[a_00, a_01], [a_10, a_11]]
-    a_00 = torch.sum(mask * prediction * prediction, (1, 2))
-    a_01 = torch.sum(mask * prediction, (1, 2))
-    a_11 = torch.sum(mask, (1, 2))
-
-    # right hand side: b = [b_0, b_1]
-    b_0 = torch.sum(mask * prediction * target, (1, 2))
-    b_1 = torch.sum(mask * target, (1, 2))
-
-    # solution: x = A^-1 . b = [[a_11, -a_01], [-a_10, a_00]] / (a_00 * a_11 - a_01 * a_10) . b
-    x_0 = torch.zeros_like(b_0)
-    x_1 = torch.zeros_like(b_1)
-
-    det = a_00 * a_11 - a_01 * a_01
-    valid = det.nonzero()
-
-    x_0[valid] = (a_11[valid] * b_0[valid] - a_01[valid] * b_1[valid]) / det[valid]
-    x_1[valid] = (-a_01[valid] * b_0[valid] + a_00[valid] * b_1[valid]) / det[valid]
-
-    return x_0, x_1
+from src.utils.depth_utils import compute_scale_and_shift, dbscan_affine_transform
 
 
 class MarigoldModule(LightningModule):
@@ -101,12 +79,15 @@ class MarigoldModule(LightningModule):
         assert len(batch['rgb']) == 1
 
         image = batch['rgb'][0].cpu()
-        gt_depth = batch['gt'][0]
+        depth_gt_sparse = batch['dep'][0]
         mask = batch['dep'][0] != 0
 
-        depth = run_marigold(self.model, image)[None, :]  # [1, H, W]
-        scale, shift = compute_scale_and_shift(depth, gt_depth, mask)
-        depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
+        depth = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
+        
+        # scale, shift = compute_scale_and_shift(depth, depth_gt_sparse, mask)
+        # depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
+        new_depth = dbscan_affine_transform(depth, depth_gt_sparse)
+        depth = new_depth[None, :]
 
         return depth[None, :]  # [1, 1, H, W]
 
