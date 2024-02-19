@@ -77,6 +77,23 @@ def get_depth_sam(rgb, depth_pred, depth_gt_sparse):
     return new_depth, dbscan_mask
 
 
+def get_diff_depth(depth_pred, depth_gt_sparse, depth_gt):
+    if depth_pred.ndim == 3:
+        depth_pred = depth_pred.squeeze(0)
+    if depth_gt_sparse.ndim == 3:
+        depth_gt_sparse = depth_gt_sparse.squeeze(0)
+    if depth_gt.ndim == 3:
+        depth_gt = depth_gt.squeeze(0)
+
+    mask = depth_gt_sparse != 0
+    scale, shift = compute_scale_and_shift(depth_pred[None, :], depth_gt_sparse[None, :], mask[None, :])
+    scaled_depth = scale * depth_pred + shift
+
+    diff_depth = scaled_depth - depth_gt
+
+    return diff_depth
+
+
 def get_depth_affine(depth_pred, depth_gt_sparse):
     if depth_pred.ndim == 3:
         depth_pred = depth_pred.squeeze(0)

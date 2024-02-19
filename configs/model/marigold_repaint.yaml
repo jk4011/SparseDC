@@ -1,6 +1,6 @@
 _target_: src.models.marigold.MarigoldModule
 
-repaint: false
+repaint: true
 is_warmup: false
 monitor: ${monitor}
 base_lr: ${base_lr}

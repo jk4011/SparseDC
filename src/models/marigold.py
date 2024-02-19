@@ -25,8 +25,8 @@ sys.path.append("Marigold")
 import numpy as np
 from PIL import Image
 from torchvision import transforms
-from model import init_marigold, run_marigold
-from src.utils.depth_utils import compute_scale_and_shift, dbscan_affine_transform
+from model import init_marigold, run_marigold, run_marigold_repaint
+from src.utils.depth_utils import compute_scale_and_shift, get_depth_dbscan
 
 
 class MarigoldModule(LightningModule):
@@ -52,11 +52,12 @@ class MarigoldModule(LightningModule):
         base_lr,
         dataset,
         is_warmup=False,
-
+        repaint=True,
     ):
         super().__init__()
         self.save_hyperparameters(logger=False)
-        self.model = init_marigold()
+        self.model = init_marigold(repaint=repaint)
+        self.repaint = repaint
 
         self.is_warmup = is_warmup
 
@@ -78,15 +79,18 @@ class MarigoldModule(LightningModule):
         # TODO: loop
         assert len(batch['rgb']) == 1
 
-        image = batch['rgb'][0].cpu()
-        depth_gt_sparse = batch['dep'][0]
-        mask = batch['dep'][0] != 0
+        image = batch['rgb'][0]
+        depth_gt_sparse = batch['dep'][0][0]
 
-        depth = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
-        
-        # scale, shift = compute_scale_and_shift(depth, depth_gt_sparse, mask)
-        # depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
-        new_depth = dbscan_affine_transform(depth, depth_gt_sparse)
+        if self.repaint:
+            depth = run_marigold_repaint(self.model, image, depth_gt_sparse,
+                                         additional_data=batch)[None, :]  # [1, H, W]
+        else:
+            depth = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
+            # scale, shift = compute_scale_and_shift(depth, depth_gt_sparse, mask)
+            # depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
+            new_depth = get_depth_dbscan(depth, depth_gt_sparse)
+
         depth = new_depth[None, :]
 
         return depth[None, :]  # [1, 1, H, W]

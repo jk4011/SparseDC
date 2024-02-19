@@ -1,0 +1,12 @@
+# @package _global_
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /model: marigold_repaint
+  - override /trainer: gpu_grad_enabled
+
+batch_size: 8
+num_workers: 24
+
+task_name: ${model.net.backbone_l.model_name}_${model.net.backbone_g.model_name}_final_version
