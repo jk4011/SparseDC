@@ -27,6 +27,7 @@ from PIL import Image
 from torchvision import transforms
 from model import init_marigold, run_marigold, run_marigold_repaint
 from src.utils.depth_utils import compute_scale_and_shift, get_depth_dbscan
+from typing import Union
 
 
 class MarigoldModule(LightningModule):
@@ -72,6 +73,11 @@ class MarigoldModule(LightningModule):
             self.figure_dir = os.path.join(self.save_dir, "val_results")
             os.makedirs(self.figure_dir, exist_ok=True)
 
+    def to(self, device: Union[str, torch.device]):
+        self.model.to(device)
+        super().to(device)
+        import jhutil; jhutil.jhprint(2222, self.model.device)
+
     def load_state_dict(self, path):
         pass
 
@@ -83,17 +89,17 @@ class MarigoldModule(LightningModule):
         depth_gt_sparse = batch['dep'][0][0]
 
         if self.repaint:
-            depth = run_marigold_repaint(self.model, image, depth_gt_sparse,
-                                         additional_data=batch)[None, :]  # [1, H, W]
+            output = run_marigold_repaint(self.model, image, depth_gt_sparse,
+                                          additional_data=batch)
+            dpeth_pred = output["depth_pred"][None, :]  # [1, H, W]
         else:
-            depth = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
+            depth_pred = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
             # scale, shift = compute_scale_and_shift(depth, depth_gt_sparse, mask)
             # depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
-            new_depth = get_depth_dbscan(depth, depth_gt_sparse)
+            depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
+            depth_pred = depth_pred_scaled[None, :]
 
-        depth = new_depth[None, :]
-
-        return depth[None, :]  # [1, 1, H, W]
+        return dpeth_pred[None, :]  # [1, 1, H, W]
 
     # def training_step(self, batch: Any, batch_idx: int):
     #     return 0

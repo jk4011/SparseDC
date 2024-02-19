@@ -1,6 +1,8 @@
 defaults:
   - default.yaml
 
+strategy: ddp
 accelerator: gpu
-devices: 1
+num_nodes: 1
+devices: -1
 inference_mode: false

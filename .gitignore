@@ -156,3 +156,7 @@ configs/local/default.yaml
 tmp*
 datas
 wandb
+cifar-10-batches-py
+images
+logs
+.hydra
