@@ -8,9 +8,9 @@ from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamP
 def compute_scale_and_shift(prediction, target, mask):
     if prediction.ndim == 2:
         prediction = prediction[None, :]
-    if prediction.ndim == 2:
+    if target.ndim == 2:
         target = target[None, :]
-    if prediction.ndim == 2:
+    if mask.ndim == 2:
         mask = mask[None, :]
 
     # system matrix: A = [[a_00, a_01], [a_10, a_11]]
