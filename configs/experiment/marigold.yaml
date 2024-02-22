@@ -4,6 +4,8 @@
 
 defaults:
   - override /model: marigold
+  - override /trainer: gpu_grad_enabled
+  - override /data: nyu_marigold
 
 batch_size: 8
 num_workers: 24

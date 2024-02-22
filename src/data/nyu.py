@@ -60,6 +60,18 @@ class NYUDataset(BaseDataset):
         with open(os.path.join(args.data_dir, "nyu.json")) as json_file:
             json_data = json.load(json_file)
             self.sample_list = json_data[mode]
+        
+        if mode == "test" and hasattr(args, "data_size"):
+            n_total_data = self.sample_list
+            size_to_n = {
+                "tiny": 8,
+                "small": 32,
+                "mid": 128,
+                "full": len(n_total_data)
+            }
+            n_data = size_to_n[args.data_size]
+            stride = len(n_total_data) // n_data
+            self.sample_list = self.sample_list[::stride]
 
     def __len__(self):
         return len(self.sample_list)

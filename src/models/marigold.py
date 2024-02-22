@@ -28,6 +28,8 @@ from torchvision import transforms
 from model import init_marigold, run_marigold, run_marigold_repaint
 from src.utils.depth_utils import compute_scale_and_shift, get_depth_dbscan
 from typing import Union
+import wandb
+from src.utils.depth_utils import combine_depth_results
 
 
 class MarigoldModule(LightningModule):
@@ -91,15 +93,15 @@ class MarigoldModule(LightningModule):
         if self.repaint:
             output = run_marigold_repaint(self.model, image, depth_gt_sparse,
                                           additional_data=batch)
-            dpeth_pred = output["depth_pred"][None, :]  # [1, H, W]
+            depth_pred = output["depth_pred"][None, :]  # [1, H, W]
         else:
             depth_pred = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
-            # scale, shift = compute_scale_and_shift(depth, depth_gt_sparse, mask)
-            # depth = scale.view(-1, 1, 1) * depth + shift.view(-1, 1, 1)
-            depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
-            depth_pred = depth_pred_scaled[None, :]
+            scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, depth_gt_sparse != 0)
+            depth_pred = scale * depth_pred + shift
+            # depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
+            # depth_pred = depth_pred_scaled[None, :]
 
-        return dpeth_pred[None, :]  # [1, 1, H, W]
+        return depth_pred[None, :]  # [1, 1, H, W]
 
     # def training_step(self, batch: Any, batch_idx: int):
     #     return 0
@@ -132,10 +134,18 @@ class MarigoldModule(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         pred = self.forward(batch)
-
+        
         if self.hparams.dataset in ["nyu", "sunrgbd"]:
             gt = batch["gt"]
             self.metric.evaluate(pred, gt)
+            
+            if batch_idx % 10 == 0:
+                image = batch["rgb"]
+                depth_gt = batch["gt"].squeeze()
+                depth_gt_sparse = batch["dep"].squeeze()
+                
+                combined_result = combine_depth_results(image, depth_gt, depth_gt_sparse, pred)
+                wandb.log({"test/rgb": wandb.Image(combined_result)}, step=batch_idx)
 
     def test_epoch_end(self, outputs: List[Any]):
         if self.hparams.dataset in ["nyu", "sunrgbd"]:

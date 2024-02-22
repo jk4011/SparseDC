@@ -19,6 +19,8 @@ from src.utils.vis_utils import (
     batch_save_kitti,
     padding_kitti,
 )
+import wandb
+from src.utils.depth_utils import combine_depth_results
 
 
 class DepthLitModule(LightningModule):
@@ -195,6 +197,15 @@ class DepthLitModule(LightningModule):
             with open(self.test_csv, "a") as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=self.test_fieldnames)
                 writer.writerow(result)
+            
+            if batch_idx % 10 == 0:
+                image = batch["rgb"]
+                depth_gt = batch["gt"].squeeze()
+                depth_gt_sparse = batch["dep"].squeeze()
+                
+                combined_result = combine_depth_results(image, depth_gt, depth_gt_sparse, pred)
+                wandb.log({"test/rgb": wandb.Image(combined_result)}, step=batch_idx)
+
         str_i = str(batch_idx * word_size + rank)
         path_i = str_i.zfill(10) + ".png"
         path = os.path.join(self.test_out_dir, path_i)

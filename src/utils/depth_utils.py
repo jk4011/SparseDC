@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from sklearn.cluster import DBSCAN
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+import matplotlib.pyplot as plt
 
 
 # copy from MiDaS
@@ -120,6 +121,7 @@ def get_scaled_depth_sparse(depth_pred, depth_gt_sparse):
 
     return scaled_depth_sparse
 
+
 def get_depth_dbscan(depth_pred, depth_gt_sparse):
     # TODO: 위 함수랑 변수명 통일
     if depth_pred.ndim == 3:
@@ -186,3 +188,53 @@ def cluster_depth_map(depth_map, eps=1.5, min_samples=5):
     labels_map = torch.tensor(labels_map)
 
     return labels_map
+
+
+def depth_map_to_twilight(depth_map, norm=True):
+    if norm:
+        # Normalize the depth map for the color map
+        depth_map = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min()) / 2 + 0.5
+    else:
+        depth_map = depth_map / 2 + 0.5
+
+    # Apply the twilight color map
+    twilight_color_map = plt.get_cmap('twilight')
+    depth_map_colored = twilight_color_map(depth_map.squeeze())  # Remove channel dim if it exists
+
+    # Convert to tensor and keep only RGB channels (discard alpha)
+    depth_map_colored = torch.tensor(depth_map_colored[..., :3], dtype=torch.float32).permute(2, 0, 1)
+
+    return depth_map_colored
+
+
+def combine_depth_results(image, depth_gt, depth_gt_sparse, depth_pred):
+    depth_gt = depth_gt.squeeze().cpu()
+    depth_gt_sparse = depth_gt_sparse.squeeze().cpu()
+    depth_pred = depth_pred.squeeze().cpu()
+    if isinstance(image, torch.Tensor):
+        image = image.squeeze().cpu()
+
+    # 1. depth_gt and depth_pred
+
+    depth_combined = torch.cat([depth_gt, depth_pred], dim=1)
+    depth_combined = depth_map_to_twilight(depth_combined)
+
+    # 2. depth_gt_sparse
+    depth_mask = torch.cat([depth_gt_sparse != 0, depth_gt_sparse != 0], dim=1)
+    depth_combined[:, depth_mask] = 1
+
+    # 3. depth_diff
+    depth_diff = (depth_gt - depth_pred)
+    depth_diff_rgb = depth_map_to_twilight(depth_diff, norm=False)
+    depth_combined = torch.cat([depth_combined, depth_diff_rgb], dim=2)
+
+    # 4. image
+    image = torch.from_numpy(np.array(image)).float().squeeze()
+    if image.shape[0] != 3:
+        image = image.permute(2, 0, 1)
+    if image.max() > 1:
+        image /= 255
+
+    depth_combined = torch.cat([image, depth_combined], dim=2)
+
+    return depth_combined
