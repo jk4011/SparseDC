@@ -30,6 +30,11 @@ from src.utils.depth_utils import compute_scale_and_shift, get_depth_dbscan
 from typing import Union
 import wandb
 from src.utils.depth_utils import combine_depth_results
+from src.utils.depth_utils import (
+	get_depth_sam_hull,
+	get_depth_sam_shifted,
+)
+
 
 
 class MarigoldModule(LightningModule):
@@ -56,6 +61,7 @@ class MarigoldModule(LightningModule):
         dataset,
         is_warmup=False,
         repaint=True,
+        refine_type="sam_shift"
     ):
         super().__init__()
         self.save_hyperparameters(logger=False)
@@ -68,6 +74,7 @@ class MarigoldModule(LightningModule):
         self.metric = metric
         self.best_result = MinMetric()
         self.save_dir = save_dir
+        self.refine_type = refine_type
 
         if is_master():
             self.fieldnames = ["epoch"] + list(self.metric.metrics.keys())
@@ -78,7 +85,6 @@ class MarigoldModule(LightningModule):
     def to(self, device: Union[str, torch.device]):
         self.model.to(device)
         super().to(device)
-        import jhutil; jhutil.jhprint(2222, self.model.device)
 
     def load_state_dict(self, path):
         pass
@@ -96,10 +102,19 @@ class MarigoldModule(LightningModule):
             depth_pred = output["depth_pred"][None, :]  # [1, H, W]
         else:
             depth_pred = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
-            # scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, depth_gt_sparse != 0)
-            # depth_pred = scale * depth_pred + shift
-            # depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
-            # depth_pred = depth_pred_scaled[None, :]
+            
+            if self.refine_type == "affine":
+                scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, depth_gt_sparse != 0)
+                depth_pred = scale * depth_pred + shift
+            elif self.refine_type == "dbscan":
+                depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
+                depth_pred = depth_pred_scaled[None, :]
+            elif self.refine_type == "sam_hull":
+                depth_pred, hull_max = get_depth_sam_hull(image, depth_pred, depth_gt_sparse)
+                depth_pred = depth_pred[None, :]  # [1, H, W]
+            elif self.refine_type == "sam_shift":
+                depth_pred = get_depth_sam_shifted(image, depth_pred, depth_gt_sparse)
+                depth_pred = depth_pred[None, :]  # [1, H, W]
 
         return depth_pred[None, :]  # [1, 1, H, W]
 

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 import PIL
 from scipy.spatial import QhullError
-
+from torchvision import transforms
 from src.utils.mask_utils import (
     get_hull_values,
     get_circle_value,
@@ -50,15 +50,26 @@ clusters = None
 
 
 def get_depth_sam_hull(rgb, depth_pred, depth_gt_sparse, scale_margin=[0.8, 1.25], shift_margin=[0.7, 1.4], err_margin=0.1, lambda_param=30):
+    device = depth_gt_sparse.device
+    
+    if depth_pred.ndim == 3:
+        depth_pred = depth_pred.squeeze(0)
+    if depth_gt_sparse.ndim == 3:
+        depth_gt_sparse = depth_gt_sparse.squeeze(0)
+    if rgb.ndim == 4:
+        rgb = rgb.squeeze(0)
+    
+    if isinstance(rgb, torch.Tensor):
+        rgb = transforms.ToPILImage()(rgb.cpu())
     if isinstance(rgb, PIL.Image.Image):
         rgb = np.array(rgb)
-
+        
     global sam, clusters
     if sam is None:
         sam_checkpoint = "/data2/wlsgur4011/SparseDC/pretrain/sam_vit_h_4b8939.pth"
         model_type = "vit_h"
         model = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-        model.to(device="cuda")
+        model.to(device=device)
         sam = SamAutomaticMaskGenerator(model)
     clusters = sam.generate(rgb)
     global_scale, global_shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, mask=(depth_gt_sparse != 0))
@@ -68,7 +79,7 @@ def get_depth_sam_hull(rgb, depth_pred, depth_gt_sparse, scale_margin=[0.8, 1.25
     hull_max = torch.zeros_like(depth_pred)
 
     for i, cluster in enumerate(clusters):
-        cluster = torch.tensor(cluster['segmentation']).cuda()
+        cluster = torch.tensor(cluster['segmentation'], device=device)
         cluster_depth = cluster * depth_gt_sparse
 
         mask = cluster_depth != 0
@@ -137,6 +148,15 @@ def get_depth_sam_hull(rgb, depth_pred, depth_gt_sparse, scale_margin=[0.8, 1.25
 def get_depth_sam_shifted(rgb, depth_pred, depth_gt_sparse):
     device = depth_gt_sparse.device
     
+    if depth_pred.ndim == 3:
+        depth_pred = depth_pred.squeeze(0)
+    if depth_gt_sparse.ndim == 3:
+        depth_gt_sparse = depth_gt_sparse.squeeze(0)
+    if rgb.ndim == 4:
+        rgb = rgb.squeeze(0)
+    
+    if isinstance(rgb, torch.Tensor):
+        rgb = transforms.ToPILImage()(rgb.cpu())
     if isinstance(rgb, PIL.Image.Image):
         rgb = np.array(rgb)
 
@@ -145,7 +165,7 @@ def get_depth_sam_shifted(rgb, depth_pred, depth_gt_sparse):
         sam_checkpoint = "/data2/wlsgur4011/SparseDC/pretrain/sam_vit_h_4b8939.pth"
         model_type = "vit_h"
         model = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-        model.to(device="cuda")
+        model.to(device=device)
         sam = SamAutomaticMaskGenerator(model)
     clusters = sam.generate(rgb)
     global_scale, global_shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, mask=(depth_gt_sparse != 0))
