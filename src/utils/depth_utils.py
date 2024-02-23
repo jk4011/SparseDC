@@ -4,6 +4,14 @@ from sklearn.cluster import DBSCAN
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 import matplotlib.pyplot as plt
 
+import PIL
+from scipy.spatial import QhullError
+
+from src.utils.mask_utils import (
+    get_hull_values,
+    get_circle_value,
+)
+
 
 # copy from MiDaS
 def compute_scale_and_shift(prediction, target, mask):
@@ -36,11 +44,16 @@ def compute_scale_and_shift(prediction, target, mask):
     return x_0, x_1
 
 
+
 sam = None
+clusters = None
 
 
-def get_depth_sam(rgb, depth_pred, depth_gt_sparse):
-    global sam
+def get_depth_sam_hull(rgb, depth_pred, depth_gt_sparse, scale_margin=[0.8, 1.25], shift_margin=[0.7, 1.4], err_margin=0.1, lambda_param=30):
+    if isinstance(rgb, PIL.Image.Image):
+        rgb = np.array(rgb)
+
+    global sam, clusters
     if sam is None:
         sam_checkpoint = "/data2/wlsgur4011/SparseDC/pretrain/sam_vit_h_4b8939.pth"
         model_type = "vit_h"
@@ -48,34 +61,114 @@ def get_depth_sam(rgb, depth_pred, depth_gt_sparse):
         model.to(device="cuda")
         sam = SamAutomaticMaskGenerator(model)
     clusters = sam.generate(rgb)
+    global_scale, global_shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, mask=(depth_gt_sparse != 0))
 
-    if depth_pred.ndim == 3:
-        depth_pred = depth_pred.squeeze(0)
-    if depth_gt_sparse.ndim == 3:
-        depth_gt_sparse = depth_gt_sparse.squeeze(0)
+    depth_sum = torch.zeros_like(depth_pred)
+    hull_sum = torch.zeros_like(depth_pred)
+    hull_max = torch.zeros_like(depth_pred)
 
-    new_depth = torch.zeros_like(depth_pred)
-
-    for cluster in clusters:
+    for i, cluster in enumerate(clusters):
         cluster = torch.tensor(cluster['segmentation']).cuda()
         cluster_depth = cluster * depth_gt_sparse
-        if cluster_depth.sum() < 2:
-            continue
 
         mask = cluster_depth != 0
-        scale, shift = compute_scale_and_shift(depth_pred[None, :], depth_gt_sparse[None, :], mask[None, :])
-        new_depth[cluster] = scale * depth_pred[cluster] + shift
 
-    mask = depth_gt_sparse != 0
-    scale, shift = compute_scale_and_shift(depth_pred[None, :], depth_gt_sparse[None, :], mask[None, :])
-    scaled_depth = scale * depth_pred + shift
+        err = torch.ones(100)
 
-    mask = new_depth == 0
-    new_depth[mask] = scaled_depth[mask]
+        while True:
+            if mask.sum() <= 3:
+                break
 
-    dbscan_mask = ~mask
+            scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, mask)
 
-    return new_depth, dbscan_mask
+            # TODO: reject
+            err = ((scale * depth_pred + shift) - depth_gt_sparse).abs()
+            err[~mask] = 0
+
+            if (err < err_margin).all():
+                break
+            else:
+                # Replace the maximum value with 0
+                mask[err == err.max()] = 0
+
+        # n sample must be larger than 3
+        if mask.sum() <= 3:
+            # TODO: use shifted depth
+            continue
+
+        if not (scale_margin[0] < abs(scale / global_scale) < scale_margin[1] or
+                shift_margin[0] < abs(shift / global_shift) < shift_margin[1]):
+            continue
+
+        depth_sparse_local = (depth_gt_sparse * mask).cpu().numpy().astype(bool)
+        try:
+            hull_values = get_hull_values(depth_sparse_local, lambda_param=lambda_param).to(depth_pred.device)
+        except QhullError:
+            # pixels are collinear
+            continue
+
+        # TODO: use hull_values linear interpolation
+        depth_scaled = scale * depth_pred + shift
+        hull_values = cluster * hull_values
+        depth_sum += hull_values * depth_scaled
+        hull_sum += hull_values
+        hull_max = torch.max(hull_max, hull_values)
+
+        # hull_mask = (hull_values != 0).to(depth_pred.device)
+        # cluster = cluster * hull_mask
+        # depth_sum[cluster] += scale * depth_pred[cluster] + shift
+        # depth_n += cluster
+
+    depth_hull = torch.zeros_like(depth_pred)
+    sam_mask = hull_max > 0
+    depth_hull[sam_mask] = depth_sum[sam_mask] / hull_sum[sam_mask]
+    
+    depth_scaled = global_scale * depth_pred + global_shift
+        
+    new_depth = hull_max * depth_hull + (1 - hull_max) * depth_scaled
+
+    # sam_mask = depth_n != 0
+    # new_depth[sam_mask] = depth_sum[sam_mask] / depth_n[sam_mask]
+    # new_depth[~sam_mask] = (global_scale * depth_pred + global_shift)[~sam_mask]
+
+    return new_depth, hull_max
+
+
+def get_depth_sam_shifted(rgb, depth_pred, depth_gt_sparse):
+    device = depth_gt_sparse.device
+    
+    if isinstance(rgb, PIL.Image.Image):
+        rgb = np.array(rgb)
+
+    global sam, clusters
+    if sam is None:
+        sam_checkpoint = "/data2/wlsgur4011/SparseDC/pretrain/sam_vit_h_4b8939.pth"
+        model_type = "vit_h"
+        model = sam_model_registry[model_type](checkpoint=sam_checkpoint)
+        model.to(device="cuda")
+        sam = SamAutomaticMaskGenerator(model)
+    clusters = sam.generate(rgb)
+    global_scale, global_shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, mask=(depth_gt_sparse != 0))
+    depth_affine = global_scale * depth_pred + global_shift
+    
+    depth_shifted = depth_affine.clone()
+
+    for i, cluster in enumerate(clusters):
+        cluster = torch.tensor(cluster['segmentation'], device=device)
+        cluster_depth = cluster * depth_gt_sparse
+
+        mask = cluster_depth != 0
+        points_pred = depth_affine[mask]
+        points_gt = cluster_depth[mask]
+        
+        local_shift = (points_gt - points_pred).mean()
+        
+        depth_shifted[cluster] = depth_affine[cluster] + local_shift
+    
+    return depth_shifted
+
+
+#TODO: get_depth_sam_CIRCLE
 
 
 def get_diff_depth(depth_pred, depth_gt_sparse, depth_gt):

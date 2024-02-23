@@ -96,8 +96,8 @@ class MarigoldModule(LightningModule):
             depth_pred = output["depth_pred"][None, :]  # [1, H, W]
         else:
             depth_pred = run_marigold(self.model, image, additional_data=batch)[None, :]  # [1, H, W]
-            scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, depth_gt_sparse != 0)
-            depth_pred = scale * depth_pred + shift
+            # scale, shift = compute_scale_and_shift(depth_pred, depth_gt_sparse, depth_gt_sparse != 0)
+            # depth_pred = scale * depth_pred + shift
             # depth_pred_scaled = get_depth_dbscan(depth_pred, depth_gt_sparse)
             # depth_pred = depth_pred_scaled[None, :]
 
@@ -145,6 +145,7 @@ class MarigoldModule(LightningModule):
                 depth_gt_sparse = batch["dep"].squeeze()
                 
                 combined_result = combine_depth_results(image, depth_gt, depth_gt_sparse, pred)
+                # TODO: solve error
                 wandb.log({"test/rgb": wandb.Image(combined_result)}, step=batch_idx)
 
     def test_epoch_end(self, outputs: List[Any]):
